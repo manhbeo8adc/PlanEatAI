@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
 import kotlinx.serialization.Serializable
+import com.google.accompanist.flowlayout.FlowRow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -442,28 +443,30 @@ fun TagInputCard(
                     Text("+", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 22.sp)
                 }
             }
-            Column(Modifier.padding(top = 8.dp)) {
-                tags.chunked(3).forEach { rowTags ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowTags.forEach { tag ->
-                            Box(
-                                Modifier
-                                    .background(Pink50, shape = RoundedCornerShape(16.dp))
-                                    .border(1.dp, Pink200, shape = RoundedCornerShape(16.dp))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(tag, color = Pink400, fontWeight = FontWeight.Medium)
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Xoá",
-                                        tint = Pink200,
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .clickable { onRemove(tag) }
-                                    )
-                                }
-                            }
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                mainAxisSpacing = 8.dp,
+                crossAxisSpacing = 8.dp
+            ) {
+                tags.forEach { tag ->
+                    Box(
+                        Modifier
+                            .background(Pink50, shape = RoundedCornerShape(16.dp))
+                            .border(1.dp, Pink200, shape = RoundedCornerShape(16.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(tag, color = Pink400, fontWeight = FontWeight.Medium)
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Xoá",
+                                tint = Pink200,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clickable { onRemove(tag) }
+                            )
                         }
                     }
                 }
