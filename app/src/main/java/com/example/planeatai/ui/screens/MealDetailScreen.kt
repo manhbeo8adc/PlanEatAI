@@ -38,6 +38,7 @@ fun MealDetailScreen(
     onEdit: () -> Unit,
     viewModel: MealPlanViewModel = viewModel()
 ) {
+    val userPreferences by viewModel.userPreferences.collectAsState()
     var dish by remember { mutableStateOf<Dish?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -113,7 +114,7 @@ fun MealDetailScreen(
                 dish?.let { dishData ->
                     item {
                         NutritionCard(
-                            title = "📊 Thông tin dinh dưỡng tổng",
+                            title = "📊 Thông tin dinh dưỡng món ăn (cho 1 người)",
                             nutrition = dishData.nutrition
                         )
                     }
@@ -124,7 +125,7 @@ fun MealDetailScreen(
                     if (dishData.ingredients.isNotEmpty()) {
                         item {
                             Text(
-                                text = "🥕 Nguyên liệu chi tiết",
+                                text = "🥕 Nguyên liệu chi tiết (cho ${userPreferences.servings} người)",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -139,7 +140,7 @@ fun MealDetailScreen(
                         item {
                             val totalNutrition = calculateTotalNutritionFromIngredients(dishData.ingredients)
                             NutritionCard(
-                                title = "📈 Tổng dinh dưỡng (tính từ nguyên liệu)",
+                                title = "📈 Tổng dinh dưỡng (tính từ nguyên liệu cho ${userPreferences.servings} người)",
                                 nutrition = totalNutrition
                             )
                         }
@@ -193,7 +194,7 @@ fun MealDetailScreen(
                                 InfoItem(
                                     icon = "👥",
                                     label = "Khẩu phần",
-                                    value = "$servings người"
+                                    value = "${userPreferences.servings} người"
                                 )
                             }
                         }

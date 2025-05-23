@@ -12,6 +12,10 @@ import kotlinx.serialization.Serializable
 import android.util.Log
 import com.google.ai.client.generativeai.GenerativeModel
 import com.example.planeatai.config.ApiConfig
+import android.content.Context
+import android.content.SharedPreferences
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 
 @Serializable
 data class SavedMealPlan(
@@ -19,7 +23,7 @@ data class SavedMealPlan(
     val meals: List<MealPlan>
 )
 
-class MealPlanViewModel : ViewModel() {
+class MealPlanViewModel(val context: Context? = null) : ViewModel() {
     private val _mealPlans = MutableStateFlow<List<MealPlan>>(emptyList())
     val mealPlans: StateFlow<List<MealPlan>> = _mealPlans.asStateFlow()
 
@@ -36,6 +40,13 @@ class MealPlanViewModel : ViewModel() {
         modelName = ApiConfig.MODEL_NAME,
         apiKey = ApiConfig.GEMINI_API_KEY
     )
+
+    private val prefs: SharedPreferences? = context?.getSharedPreferences("PlanEatAI", Context.MODE_PRIVATE)
+
+    init {
+        loadPreferences()
+        loadMealPlan()
+    }
 
     private fun parseFloatFromAny(value: Any?): Float {
         return when (value) {
@@ -90,8 +101,28 @@ class MealPlanViewModel : ViewModel() {
         }
     }
 
+    private fun loadPreferences() {
+        try {
+            val prefsJson = prefs?.getString("user_preferences", null)
+            if (prefsJson != null) {
+                val preferences = Json.decodeFromString<UserPreferences>(prefsJson)
+                _userPreferences.value = preferences
+                Log.d("MealPlanViewModel", "Loaded preferences: $preferences")
+            }
+        } catch (e: Exception) {
+            Log.e("MealPlanViewModel", "Error loading preferences", e)
+        }
+    }
+
     fun savePreferences(preferences: UserPreferences) {
         _userPreferences.value = preferences
+        try {
+            val prefsJson = Json.encodeToString(preferences)
+            prefs?.edit()?.putString("user_preferences", prefsJson)?.apply()
+            Log.d("MealPlanViewModel", "Saved preferences: $preferences")
+        } catch (e: Exception) {
+            Log.e("MealPlanViewModel", "Error saving preferences", e)
+        }
     }
 
     fun generateMealPlan() {
@@ -120,20 +151,24 @@ class MealPlanViewModel : ViewModel() {
                 
                 🌅 BỮA SÁNG:
                 - Thời gian chuẩn bị: ${prefs.breakfastPrefs.prepTime} phút
-                - Calo mong muốn: ${prefs.breakfastPrefs.calories} kcal
-                - Ngân sách: ${prefs.breakfastPrefs.budget / 1000}k VND
+                - Calo mong muốn: ${prefs.breakfastPrefs.calories} kcal (cho 1 người)
+                - Ngân sách: ${prefs.breakfastPrefs.budget / 1000}k VND (cho ${prefs.servings} người)
                 
                 🌞 BỮA TRƯA:
                 - Thời gian chuẩn bị: ${prefs.lunchPrefs.prepTime} phút
-                - Calo mong muốn: ${prefs.lunchPrefs.calories} kcal
-                - Ngân sách: ${prefs.lunchPrefs.budget / 1000}k VND
+                - Calo mong muốn: ${prefs.lunchPrefs.calories} kcal (cho 1 người)
+                - Ngân sách: ${prefs.lunchPrefs.budget / 1000}k VND (cho ${prefs.servings} người)
                 
                 🌙 BỮA TỐI:
                 - Thời gian chuẩn bị: ${prefs.dinnerPrefs.prepTime} phút
-                - Calo mong muốn: ${prefs.dinnerPrefs.calories} kcal
-                - Ngân sách: ${prefs.dinnerPrefs.budget / 1000}k VND
+                - Calo mong muốn: ${prefs.dinnerPrefs.calories} kcal (cho 1 người)
+                - Ngân sách: ${prefs.dinnerPrefs.budget / 1000}k VND (cho ${prefs.servings} người)
                 
                 📝 YÊU CẦU BỔ SUNG: ${prefs.additionalRequests.ifEmpty { "Không có" }}
+                
+                LẦU Ý QUAN TRỌNG: 
+                - Thông tin dinh dưỡng trả về là cho 1 người ăn
+                - Nguyên liệu và công thức nấu sẽ tính cho ${prefs.servings} người
                 
                 CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT GIẢI THÍCH THÊM!
                 
@@ -194,7 +229,7 @@ class MealPlanViewModel : ViewModel() {
                   ]
                 }
                 
-                Lưu ý: Món ăn Việt Nam, thông tin dinh dưỡng chính xác. CHỈ JSON, KHÔNG TEXT THÊM!
+                Lưu ý: Món ăn Việt Nam, thông tin dinh dưỡng chính xác cho 1 người. CHỈ JSON, KHÔNG TEXT THÊM!
                 """.trimIndent()
 
                 val response = generativeModel.generateContent(prompt)
@@ -268,10 +303,18 @@ class MealPlanViewModel : ViewModel() {
             _isLoading.value = true
             _errorMessage.value = null
             
+            val prefs = _userPreferences.value
+            
             val prompt = """
             CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT GIẢI THÍCH THÊM!
             
-            Thông tin chi tiết món ăn "$dishName":
+            Thông tin chi tiết món ăn "$dishName" cho ${prefs.servings} người ăn:
+            
+            LẦU Ý QUAN TRỌNG:
+            - Thông tin dinh dưỡng món ăn: CHO 1 NGƯỜI
+            - Nguyên liệu và công thức: CHO ${prefs.servings} NGƯỜI
+            - Các nguyên liệu có thông tin dinh dưỡng riêng đã tính cho số lượng nguyên liệu thực tế
+            
             {
               "id": "unique_id",
               "name": "$dishName",
@@ -279,6 +322,7 @@ class MealPlanViewModel : ViewModel() {
               "description": "Mô tả chi tiết về món ăn",
               "prepTime": 15,
               "cookTime": 30,
+              "servings": ${prefs.servings},
               "nutrition": {
                 "calories": 450,
                 "protein": 25.5,
@@ -290,7 +334,7 @@ class MealPlanViewModel : ViewModel() {
               "ingredients": [
                 {
                   "name": "Tên nguyên liệu",
-                  "amount": "Số lượng",
+                  "amount": "Số lượng cho ${prefs.servings} người",
                   "calories": 100,
                   "protein": 5.0,
                   "carbs": 15.0,
@@ -300,12 +344,16 @@ class MealPlanViewModel : ViewModel() {
                 }
               ],
               "steps": [
-                "Bước 1: ...",
+                "Bước 1: (công thức cho ${prefs.servings} người)",
                 "Bước 2: ..."
               ]
             }
             
-            Lưu ý: Món Việt Nam, thông tin chính xác. CHỈ JSON, KHÔNG TEXT THÊM!
+            Lưu ý: 
+            - Món Việt Nam, thông tin chính xác
+            - Nutrition món ăn: cho 1 người
+            - Ingredients và steps: cho ${prefs.servings} người
+            - CHỈ JSON, KHÔNG TEXT THÊM!
             """.trimIndent()
 
             val response = generativeModel.generateContent(prompt)
@@ -326,7 +374,7 @@ class MealPlanViewModel : ViewModel() {
             val prepTime = parseIntFromAny(dishObject["prepTime"]?.jsonPrimitive?.intOrNull)
             val cookTime = parseIntFromAny(dishObject["cookTime"]?.jsonPrimitive?.intOrNull)
             
-            // Parse nutrition
+            // Parse nutrition (cho 1 người)
             val nutritionObject = dishObject["nutrition"]?.jsonObject
             val nutrition = if (nutritionObject != null) {
                 Nutrition(
@@ -341,7 +389,7 @@ class MealPlanViewModel : ViewModel() {
                 Nutrition(0, 0f, 0f, 0f, 0f, 0f)
             }
             
-            // Parse ingredients
+            // Parse ingredients (cho số người ăn thực tế)
             val ingredientsArray = dishObject["ingredients"]?.jsonArray
             val ingredients = ingredientsArray?.map { ingredientElement ->
                 val ingredientObject = ingredientElement.jsonObject
@@ -391,17 +439,66 @@ class MealPlanViewModel : ViewModel() {
     }
 
     fun saveMealPlan(date: String) {
-        // Implementation for saving meal plan
-        Log.d("MealPlanViewModel", "Saving meal plan for $date")
+        try {
+            val currentMealPlans = _mealPlans.value
+            if (currentMealPlans.isNotEmpty()) {
+                val savedPlan = SavedMealPlan(date, currentMealPlans)
+                val savedPlanJson = Json.encodeToString(savedPlan)
+                prefs?.edit()?.putString("saved_meal_plan_$date", savedPlanJson)?.apply()
+                
+                // Lưu danh sách các meal plan đã lưu
+                val savedPlansList = getSavedMealPlansList().toMutableList()
+                if (!savedPlansList.contains(date)) {
+                    savedPlansList.add(date)
+                    val savedPlansListJson = Json.encodeToString(savedPlansList)
+                    prefs?.edit()?.putString("saved_meal_plans_list", savedPlansListJson)?.apply()
+                }
+                
+                Log.d("MealPlanViewModel", "Saved meal plan for $date successfully")
+            } else {
+                Log.w("MealPlanViewModel", "No meal plans to save")
+            }
+        } catch (e: Exception) {
+            Log.e("MealPlanViewModel", "Error saving meal plan", e)
+        }
     }
 
     fun loadMealPlan() {
-        // Implementation for loading saved meal plans
-        Log.d("MealPlanViewModel", "Loading saved meal plans")
+        try {
+            // Load thực đơn gần nhất
+            val savedPlanJson = prefs?.getString("saved_meal_plan_today", null)
+            if (savedPlanJson != null) {
+                val savedPlan = Json.decodeFromString<SavedMealPlan>(savedPlanJson)
+                _mealPlans.value = savedPlan.meals
+                Log.d("MealPlanViewModel", "Loaded meal plan successfully")
+            } else {
+                Log.d("MealPlanViewModel", "No saved meal plan found")
+            }
+        } catch (e: Exception) {
+            Log.e("MealPlanViewModel", "Error loading meal plan", e)
+        }
     }
 
     fun openSavedMenu() {
-        // Implementation for opening saved menu
-        Log.d("MealPlanViewModel", "Opening saved menu")
+        try {
+            // Load thực đơn đã lưu
+            loadMealPlan()
+        } catch (e: Exception) {
+            Log.e("MealPlanViewModel", "Error opening saved menu", e)
+        }
+    }
+
+    private fun getSavedMealPlansList(): List<String> {
+        return try {
+            val listJson = prefs?.getString("saved_meal_plans_list", null)
+            if (listJson != null) {
+                Json.decodeFromString<List<String>>(listJson)
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e("MealPlanViewModel", "Error getting saved meal plans list", e)
+            emptyList()
+        }
     }
 }

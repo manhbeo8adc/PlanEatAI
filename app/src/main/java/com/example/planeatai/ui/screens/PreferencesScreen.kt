@@ -18,6 +18,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import com.example.planeatai.ui.model.UserPreferences
 import com.example.planeatai.ui.model.MealPreferences
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +35,85 @@ fun PreferencesScreen(
     var cuisineStyles by remember { mutableStateOf(initialPreferences.cuisineStyles) }
     var servings by remember { mutableStateOf(initialPreferences.servings) }
     var additionalRequests by remember { mutableStateOf(initialPreferences.additionalRequests) }
+    
+    var showExitDialog by remember { mutableStateOf(false) }
+
+    // Function để kiểm tra có thay đổi không
+    fun hasChanges(): Boolean {
+        return favoriteFood != initialPreferences.favoriteFood ||
+                dislikedFood != initialPreferences.dislikedFood ||
+                breakfastPrefs != initialPreferences.breakfastPrefs ||
+                lunchPrefs != initialPreferences.lunchPrefs ||
+                dinnerPrefs != initialPreferences.dinnerPrefs ||
+                cuisineStyles != initialPreferences.cuisineStyles ||
+                servings != initialPreferences.servings ||
+                additionalRequests != initialPreferences.additionalRequests
+    }
+
+    // Function để lưu preferences
+    fun saveCurrentPreferences() {
+        val updatedPreferences = UserPreferences(
+            favoriteFood = favoriteFood,
+            dislikedFood = dislikedFood,
+            breakfastPrefs = breakfastPrefs,
+            lunchPrefs = lunchPrefs,
+            dinnerPrefs = dinnerPrefs,
+            cuisineStyles = cuisineStyles,
+            servings = servings,
+            additionalRequests = additionalRequests
+        )
+        onSave(updatedPreferences)
+    }
+
+    // Handle back button
+    BackHandler {
+        if (hasChanges()) {
+            showExitDialog = true
+        } else {
+            onBack()
+        }
+    }
+
+    // Dialog hỏi có lưu không khi thoát
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { 
+                Text(
+                    "💾 Lưu cài đặt?",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                ) 
+            },
+            text = { 
+                Text(
+                    "Bạn đã thay đổi một số cài đặt. Bạn có muốn lưu những thay đổi này không?",
+                    style = MaterialTheme.typography.bodyLarge
+                ) 
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        saveCurrentPreferences()
+                        showExitDialog = false
+                        onBack()
+                    }
+                ) {
+                    Text("💾 Lưu & Thoát")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showExitDialog = false
+                        onBack()
+                    }
+                ) {
+                    Text("🚫 Không lưu")
+                }
+            }
+        )
+    }
 
     val availableCuisines = listOf(
         "Việt Nam", "Trung Quốc", "Nhật Bản", "Hàn Quốc", "Thái Lan",
@@ -45,7 +125,13 @@ fun PreferencesScreen(
             TopAppBar(
                 title = { Text("🔧 Cài đặt sở thích ăn uống") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { 
+                        if (hasChanges()) {
+                            showExitDialog = true
+                        } else {
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại")
                     }
                 }
@@ -164,6 +250,31 @@ fun PreferencesScreen(
                         
                         Text("người")
                     }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                "ℹ️ Lưu ý về khẩu phần:",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "• Thông tin dinh dưỡng: cho 1 người\n" +
+                                "• Nguyên liệu & công thức: cho $servings người\n" +
+                                "• Ngân sách: tổng cho $servings người",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             )
 
@@ -172,21 +283,24 @@ fun PreferencesScreen(
                 title = "🌅 Bữa sáng",
                 mealPrefs = breakfastPrefs,
                 onPrefsChange = { breakfastPrefs = it },
-                borderColor = MaterialTheme.colorScheme.tertiary
+                borderColor = MaterialTheme.colorScheme.tertiary,
+                servings = servings
             )
 
             MealPreferenceCard(
                 title = "🌞 Bữa trưa", 
                 mealPrefs = lunchPrefs,
                 onPrefsChange = { lunchPrefs = it },
-                borderColor = MaterialTheme.colorScheme.primary
+                borderColor = MaterialTheme.colorScheme.primary,
+                servings = servings
             )
 
             MealPreferenceCard(
                 title = "🌙 Bữa tối",
                 mealPrefs = dinnerPrefs,
                 onPrefsChange = { dinnerPrefs = it },
-                borderColor = MaterialTheme.colorScheme.secondary
+                borderColor = MaterialTheme.colorScheme.secondary,
+                servings = servings
             )
 
             // Phần 5: Yêu cầu bổ sung
@@ -205,30 +319,32 @@ fun PreferencesScreen(
             )
 
             // Nút lưu
-            Button(
-                onClick = {
-                    val updatedPreferences = UserPreferences(
-                        favoriteFood = favoriteFood,
-                        dislikedFood = dislikedFood,
-                        breakfastPrefs = breakfastPrefs,
-                        lunchPrefs = lunchPrefs,
-                        dinnerPrefs = dinnerPrefs,
-                        cuisineStyles = cuisineStyles,
-                        servings = servings,
-                        additionalRequests = additionalRequests
-                    )
-                    onSave(updatedPreferences)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(12.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    "💾 Lưu cài đặt", 
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                OutlinedButton(
+                    onClick = { onBack() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("❌ Hủy")
+                }
+                
+                Button(
+                    onClick = {
+                        saveCurrentPreferences()
+                        onBack()
+                    },
+                    modifier = Modifier.weight(2f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        "💾 Lưu cài đặt", 
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -270,7 +386,8 @@ private fun MealPreferenceCard(
     title: String,
     mealPrefs: MealPreferences,
     onPrefsChange: (MealPreferences) -> Unit,
-    borderColor: androidx.compose.ui.graphics.Color
+    borderColor: androidx.compose.ui.graphics.Color,
+    servings: Int
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -306,11 +423,11 @@ private fun MealPreferenceCard(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Calo mong muốn
+            // Calo mong muốn  
             MealPreferenceItem(
                 label = "🔥 Calo mong muốn",
                 value = mealPrefs.calories.toString(),
-                unit = "kcal",
+                unit = "kcal/người",
                 onValueChange = { value ->
                     value.toIntOrNull()?.let { newValue ->
                         onPrefsChange(mealPrefs.copy(calories = newValue.coerceIn(100, 1500)))
@@ -324,7 +441,7 @@ private fun MealPreferenceCard(
             MealPreferenceItem(
                 label = "💰 Ngân sách",
                 value = (mealPrefs.budget / 1000).toString(),
-                unit = "k VND",
+                unit = "k VND ($servings người)",
                 onValueChange = { value ->
                     value.toIntOrNull()?.let { newValue ->
                         val budgetInVnd = (newValue * 1000).coerceIn(10000, 500000)
@@ -363,7 +480,8 @@ private fun MealPreferenceItem(
         
         Text(
             text = unit,
-            style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.width(100.dp)
         )
     }
 }

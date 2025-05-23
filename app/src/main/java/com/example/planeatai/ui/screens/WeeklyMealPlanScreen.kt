@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.planeatai.R
 import com.example.planeatai.ui.viewmodels.MealPlanViewModel
+import com.example.planeatai.ui.viewmodels.MealPlanViewModelFactory
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -62,12 +63,13 @@ import androidx.compose.animation.fadeOut
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WeeklyMealPlanScreen(
-    viewModel: MealPlanViewModel = viewModel()
-) {
+fun WeeklyMealPlanScreen() {
+    val context = LocalContext.current
+    val viewModel: MealPlanViewModel = viewModel(
+        factory = MealPlanViewModelFactory(context)
+    )
     val mealPlans by viewModel.mealPlans.collectAsState()
     val navController = rememberNavController()
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var isGenerating by remember { mutableStateOf(false) }
@@ -227,6 +229,7 @@ fun WeeklyMealPlanScreen(
                 composable("mealDetail/{mealType}/{dishName}") { backStackEntry ->
                     val mealType = backStackEntry.arguments?.getString("mealType") ?: "Bữa ăn"
                     val dishName = backStackEntry.arguments?.getString("dishName") ?: ""
+                    val prefs by viewModel.userPreferences.collectAsState()
                     MealDetailScreen(
                         mealType = mealType,
                         mealName = dishName,
@@ -234,14 +237,14 @@ fun WeeklyMealPlanScreen(
                         mealImage = R.drawable.banner_breakfast,
                         tags = listOf(),
                         time = "",
-                        servings = 1,
+                        servings = prefs.servings,
                         dishes = emptyList(),
                         onBack = { navController.popBackStack() },
-                        onEdit = { /* TODO: Edit meal */ }
+                        onEdit = { /* TODO: Edit meal */ },
+                        viewModel = viewModel
                     )
                 }
                 composable("preferences") {
-                    val viewModel: MealPlanViewModel = viewModel()
                     val prefs by viewModel.userPreferences.collectAsState()
                     PreferencesScreen(
                         initialPreferences = prefs,

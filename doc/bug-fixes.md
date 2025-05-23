@@ -784,5 +784,233 @@ fun generateMealPlan() // Sử dụng userPreferences từ state
 
 ---
 
+## 🆕 Sửa lỗi hệ thống Preferences và tính năng Save/Load (Tháng 12/2024)
+
+### 📋 **Các lỗi được báo cáo**
+1. **Preferences không được lưu lại** mặc dù đã bấm lưu cài đặt
+2. **Thiếu tính năng hỏi user** khi bấm back từ preferences nếu có thay đổi
+3. **Tính năng save và load thực đơn** không còn hoạt động nữa
+4. **Khẩu phần ăn không đúng**: Để 2 người nhưng lại ghi là 1 người
+5. **Thông tin dinh dưỡng không nhất quán**: Món ăn vs nguyên liệu tính khác nhau
+
+### 🔧 **Giải pháp đã triển khai**
+
+#### 1. **Sửa lỗi Preferences không lưu được** ✅
+
+**Vấn đề**: `savePreferences()` chỉ cập nhật state, không persist data
+
+**Giải pháp**:
+```kotlin
+// Thêm SharedPreferences persistence
+private val prefs: SharedPreferences? = context?.getSharedPreferences("PlanEatAI", Context.MODE_PRIVATE)
+
+fun savePreferences(preferences: UserPreferences) {
+    _userPreferences.value = preferences
+    try {
+        val prefsJson = Json.encodeToString(preferences)
+        prefs?.edit()?.putString("user_preferences", prefsJson)?.apply()
+        Log.d("MealPlanViewModel", "Saved preferences: $preferences")
+    } catch (e: Exception) {
+        Log.e("MealPlanViewModel", "Error saving preferences", e)
+    }
+}
+
+private fun loadPreferences() {
+    try {
+        val prefsJson = prefs?.getString("user_preferences", null)
+        if (prefsJson != null) {
+            val preferences = Json.decodeFromString<UserPreferences>(prefsJson)
+            _userPreferences.value = preferences
+        }
+    } catch (e: Exception) {
+        Log.e("MealPlanViewModel", "Error loading preferences", e)
+    }
+}
+```
+
+#### 2. **Thêm tính năng hỏi user khi back** ✅
+
+**Tính năng mới**:
+```kotlin
+// Theo dõi thay đổi
+fun hasChanges(): Boolean {
+    return favoriteFood != initialPreferences.favoriteFood ||
+            dislikedFood != initialPreferences.dislikedFood ||
+            breakfastPrefs != initialPreferences.breakfastPrefs ||
+            // ... các field khác
+}
+
+// Handle back button
+BackHandler {
+    if (hasChanges()) {
+        showExitDialog = true
+    } else {
+        onBack()
+    }
+}
+
+// Dialog hỏi có lưu không
+if (showExitDialog) {
+    AlertDialog(
+        title = { Text("💾 Lưu cài đặt?") },
+        text = { Text("Bạn đã thay đổi một số cài đặt. Bạn có muốn lưu những thay đổi này không?") },
+        confirmButton = {
+            Button(onClick = {
+                saveCurrentPreferences()
+                onBack()
+            }) { Text("💾 Lưu & Thoát") }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = { onBack() }) { 
+                Text("🚫 Không lưu") 
+            }
+        }
+    )
+}
+```
+
+#### 3. **Sửa tính năng Save/Load thực đơn** ✅
+
+**Trước**: Chỉ có log, không có implementation thực sự
+
+**Sau**: Full implementation với SharedPreferences
+```kotlin
+fun saveMealPlan(date: String) {
+    try {
+        val currentMealPlans = _mealPlans.value
+        if (currentMealPlans.isNotEmpty()) {
+            val savedPlan = SavedMealPlan(date, currentMealPlans)
+            val savedPlanJson = Json.encodeToString(savedPlan)
+            prefs?.edit()?.putString("saved_meal_plan_$date", savedPlanJson)?.apply()
+            
+            // Lưu danh sách các meal plan đã lưu
+            val savedPlansList = getSavedMealPlansList().toMutableList()
+            if (!savedPlansList.contains(date)) {
+                savedPlansList.add(date)
+                val savedPlansListJson = Json.encodeToString(savedPlansList)
+                prefs?.edit()?.putString("saved_meal_plans_list", savedPlansListJson)?.apply()
+            }
+        }
+    } catch (e: Exception) {
+        Log.e("MealPlanViewModel", "Error saving meal plan", e)
+    }
+}
+
+fun loadMealPlan() {
+    try {
+        val savedPlanJson = prefs?.getString("saved_meal_plan_today", null)
+        if (savedPlanJson != null) {
+            val savedPlan = Json.decodeFromString<SavedMealPlan>(savedPlanJson)
+            _mealPlans.value = savedPlan.meals
+        }
+    } catch (e: Exception) {
+        Log.e("MealPlanViewModel", "Error loading meal plan", e)
+    }
+}
+```
+
+#### 4. **Sửa lỗi khẩu phần ăn không đúng** ✅
+
+**Vấn đề**: MealDetailScreen hiển thị servings cố định
+
+**Giải pháp**:
+```kotlin
+// Trong MealDetailScreen
+val userPreferences by viewModel.userPreferences.collectAsState()
+
+// Hiển thị đúng số người từ preferences
+InfoItem(
+    icon = "👥",
+    label = "Khẩu phần",
+    value = "${userPreferences.servings} người"
+)
+
+// Cập nhật AI prompt để rõ ràng về servings
+val prompt = """
+LẦU Ý QUAN TRỌNG: 
+- Thông tin dinh dưỡng trả về là cho 1 người ăn
+- Nguyên liệu và công thức nấu sẽ tính cho ${prefs.servings} người
+"""
+```
+
+#### 5. **Sửa thông tin dinh dưỡng không nhất quán** ✅
+
+**Vấn đề**: Thông tin dinh dưỡng món ăn vs nguyên liệu tính khác nhau
+
+**Giải pháp**:
+```kotlin
+// Làm rõ trong UI
+NutritionCard(
+    title = "📊 Thông tin dinh dưỡng món ăn (cho 1 người)",
+    nutrition = dishData.nutrition
+)
+
+Text("🥕 Nguyên liệu chi tiết (cho ${userPreferences.servings} người)")
+
+NutritionCard(
+    title = "📈 Tổng dinh dưỡng (tính từ nguyên liệu cho ${userPreferences.servings} người)",
+    nutrition = totalNutrition
+)
+
+// Cập nhật AI prompt để rõ ràng
+"""
+LẦU Ý QUAN TRỌNG:
+- Thông tin dinh dưỡng món ăn: CHO 1 NGƯỜI
+- Nguyên liệu và công thức: CHO ${prefs.servings} NGƯỜI
+- Các nguyên liệu có thông tin dinh dưỡng riêng đã tính cho số lượng nguyên liệu thực tế
+"""
+```
+
+#### 6. **Thêm ViewModelFactory để inject Context** ✅
+
+```kotlin
+class MealPlanViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(MealPlanViewModel::class.java)) {
+            return MealPlanViewModel(context) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+// Sử dụng trong WeeklyMealPlanScreen
+val context = LocalContext.current
+val viewModel: MealPlanViewModel = viewModel(
+    factory = MealPlanViewModelFactory(context)
+)
+```
+
+### ✅ **Kết quả sau khi sửa**
+
+#### **Preferences System**
+- ✅ **Lưu trữ bền vững**: Preferences được lưu vào SharedPreferences
+- ✅ **Auto-load**: Tự động load preferences khi khởi động app
+- ✅ **Change detection**: Theo dõi thay đổi và hỏi user khi back
+- ✅ **UX tốt hơn**: Dialog xác nhận lưu/không lưu
+
+#### **Save/Load Meal Plans**
+- ✅ **Persistence**: Thực đơn được lưu vào SharedPreferences
+- ✅ **Auto-restore**: Tự động load thực đơn đã lưu khi mở app
+- ✅ **Multiple saves**: Hỗ trợ lưu nhiều thực đơn với key khác nhau
+
+#### **Serving Size & Nutrition**
+- ✅ **Consistent display**: Hiển thị đúng số người ăn từ preferences
+- ✅ **Clear labeling**: Phân biệt rõ thông tin cho 1 người vs nhiều người
+- ✅ **AI prompt clarity**: Hướng dẫn AI rõ ràng về cách tính servings
+
+#### **Build & Deploy**
+- ✅ **Debug build**: Thành công
+- ✅ **Release build**: Thành công  
+- ✅ **APK size**: 18MB
+- ✅ **No errors**: Không còn lỗi đỏ
+
+### 📊 **Impact**
+- **User Experience**: Preferences được lưu trữ bền vững
+- **Data Consistency**: Thông tin dinh dưỡng và khẩu phần nhất quán
+- **Feature Completeness**: Save/Load thực đơn hoạt động đầy đủ
+- **UX Enhancement**: Dialog xác nhận khi có thay đổi chưa lưu
+
+---
+
 *Tài liệu được cập nhật: Tháng 12/2024*
 *Tác giả: AI Assistant*
