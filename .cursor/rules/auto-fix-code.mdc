@@ -1,6 +1,0 @@
----
-description: 
-globs: 
-alwaysApply: true
----
-1. sửa code và chạy các lệnh powershell luôn, không cần đợi confirm lại

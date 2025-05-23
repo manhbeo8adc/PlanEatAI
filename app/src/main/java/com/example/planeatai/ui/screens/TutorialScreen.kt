@@ -15,9 +15,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
-import com.google.accompanist.pager.HorizontalPager
-import com.google.accompanist.pager.rememberPagerState
-import com.google.accompanist.pager.HorizontalPagerIndicator
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.ui.text.style.TextAlign
 
 @Composable
 fun TutorialScreen(onFinish: () -> Unit) {
@@ -48,8 +49,9 @@ fun TutorialScreen(onFinish: () -> Unit) {
             imageRes = android.R.drawable.ic_menu_info_details
         )
     )
-    val pagerState = rememberPagerState()
+    val pagerState = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
+    
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(
             Modifier
@@ -58,17 +60,19 @@ fun TutorialScreen(onFinish: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             HorizontalPager(
-                count = pages.size,
                 state = pagerState,
                 modifier = Modifier.weight(1f)
             ) { page ->
                 TutorialPageView(page = pages[page])
             }
-            HorizontalPagerIndicator(
+            
+            // Custom pager indicator
+            PagerIndicator(
                 pagerState = pagerState,
-                activeColor = MaterialTheme.colorScheme.primary,
+                pageCount = pages.size,
                 modifier = Modifier.padding(16.dp)
             )
+            
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -96,6 +100,32 @@ fun TutorialScreen(onFinish: () -> Unit) {
     }
 }
 
+@Composable
+fun PagerIndicator(
+    pagerState: PagerState,
+    pageCount: Int,
+    modifier: Modifier = Modifier,
+    activeColor: Color = MaterialTheme.colorScheme.primary,
+    inactiveColor: Color = Color.Gray
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        repeat(pageCount) { index ->
+            val isActive = pagerState.currentPage == index
+            Box(
+                modifier = Modifier
+                    .size(if (isActive) 12.dp else 8.dp)
+                    .background(
+                        color = if (isActive) activeColor else inactiveColor,
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    )
+            )
+        }
+    }
+}
+
 data class TutorialPage(val title: String, val description: String, val imageRes: Int)
 
 @Composable
@@ -111,8 +141,20 @@ fun TutorialPageView(page: TutorialPage) {
             modifier = Modifier.size(80.dp)
         )
         Spacer(Modifier.height(24.dp))
-        Text(page.title, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = MaterialTheme.colorScheme.primary)
+        Text(
+            text = page.title,
+            fontWeight = FontWeight.Bold,
+            fontSize = 22.sp,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
+        )
         Spacer(Modifier.height(12.dp))
-        Text(page.description, fontSize = 16.sp, color = Color(0xFF616161), lineHeight = 22.sp)
+        Text(
+            text = page.description,
+            fontSize = 16.sp,
+            color = Color(0xFF616161),
+            lineHeight = 22.sp,
+            textAlign = TextAlign.Center
+        )
     }
 }

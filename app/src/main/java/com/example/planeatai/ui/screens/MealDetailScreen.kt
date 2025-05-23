@@ -31,10 +31,14 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import com.example.planeatai.ui.model.Dish
 import com.example.planeatai.ui.model.Nutrition
+import com.example.planeatai.ui.model.Ingredient
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.planeatai.ui.viewmodels.MealPlanViewModel
 import android.util.Log
 import org.json.JSONObject
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.text.style.TextAlign
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +58,7 @@ fun MealDetailScreen(
     val context = LocalContext.current
     var dishDetail by remember(mealName) { mutableStateOf<Dish?>(null) }
     var loading by remember(mealName) { mutableStateOf(true) }
+    var errorMessage by remember(mealName) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     // Nếu mealName rỗng thì báo người dùng tạo thực đơn
     if (mealName.isBlank()) {
@@ -65,8 +70,25 @@ fun MealDetailScreen(
     // Fetch chi tiết món bằng AI khi vào màn
     LaunchedEffect(mealName) {
         loading = true
-        dishDetail = viewModel.fetchDishDetailByName(mealName)
-        loading = false
+        errorMessage = null
+        try {
+            dishDetail = viewModel.fetchDishDetailByName(mealName)
+            if (dishDetail == null) {
+                errorMessage = "Không thể lấy được chi tiết món ăn từ AI.\nVui lòng kiểm tra kết nối mạng và thử lại."
+            }
+        } catch (e: Exception) {
+            Log.e("MealDetailScreen", "Error fetching dish detail", e)
+            errorMessage = when {
+                e.message?.contains("timeout", true) == true -> 
+                    "Timeout khi lấy thông tin món ăn.\nVui lòng thử lại sau."
+                e.message?.contains("network", true) == true -> 
+                    "Lỗi kết nối mạng.\nVui lòng kiểm tra internet và thử lại."
+                else -> 
+                    "Có lỗi xảy ra: ${e.message ?: "Lỗi không xác định"}\nVui lòng thử lại sau."
+            }
+        } finally {
+            loading = false
+        }
     }
     Scaffold(
         topBar = {
@@ -160,10 +182,141 @@ fun MealDetailScreen(
                     Column(Modifier.padding(20.dp)) {
                         Text("Nguyên liệu", fontWeight = FontWeight.Bold, color = Color(0xFFAD1457), fontSize = 17.sp)
                         Spacer(Modifier.height(8.dp))
-                        dishDetail!!.ingredients.forEach { (name, amount) ->
-                            Row(Modifier.padding(vertical = 4.dp)) {
-                                Text(name, Modifier.weight(1f), fontSize = 15.sp)
-                                Text(amount, color = Color(0xFF616161), fontSize = 15.sp)
+                        dishDetail!!.ingredients.forEach { ingredient ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFCE7F3)),
+                                border = BorderStroke(1.dp, Color(0xFFE1BEE7))
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            ingredient.name, 
+                                            Modifier.weight(1f), 
+                                            fontSize = 15.sp, 
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFAD1457)
+                                        )
+                                        Text(
+                                            ingredient.amount, 
+                                            color = Color(0xFF616161), 
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    if (ingredient.calories > 0 || ingredient.protein > 0 || ingredient.carbs > 0 || ingredient.fat > 0) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            if (ingredient.calories > 0) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(
+                                                        "${ingredient.calories}", 
+                                                        fontSize = 12.sp, 
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFFFF6F00)
+                                                    )
+                                                    Text(
+                                                        "kcal", 
+                                                        fontSize = 10.sp, 
+                                                        color = Color(0xFF616161)
+                                                    )
+                                                }
+                                            }
+                                            if (ingredient.protein > 0) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(
+                                                        String.format("%.1f", ingredient.protein), 
+                                                        fontSize = 12.sp, 
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFF1976D2)
+                                                    )
+                                                    Text(
+                                                        "protein", 
+                                                        fontSize = 10.sp, 
+                                                        color = Color(0xFF616161)
+                                                    )
+                                                }
+                                            }
+                                            if (ingredient.carbs > 0) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(
+                                                        String.format("%.1f", ingredient.carbs), 
+                                                        fontSize = 12.sp, 
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFFFFA000)
+                                                    )
+                                                    Text(
+                                                        "carbs", 
+                                                        fontSize = 10.sp, 
+                                                        color = Color(0xFF616161)
+                                                    )
+                                                }
+                                            }
+                                            if (ingredient.fat > 0) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(
+                                                        String.format("%.1f", ingredient.fat), 
+                                                        fontSize = 12.sp, 
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFFD32F2F)
+                                                    )
+                                                    Text(
+                                                        "fat", 
+                                                        fontSize = 10.sp, 
+                                                        color = Color(0xFF616161)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        if (ingredient.fiber > 0 || ingredient.sugar > 0) {
+                                            Spacer(Modifier.height(4.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.Center
+                                            ) {
+                                                if (ingredient.fiber > 0) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        modifier = Modifier.padding(end = 16.dp)
+                                                    ) {
+                                                        Text(
+                                                            String.format("%.1f", ingredient.fiber), 
+                                                            fontSize = 12.sp, 
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFF388E3C)
+                                                        )
+                                                        Text(
+                                                            "fiber", 
+                                                            fontSize = 10.sp, 
+                                                            color = Color(0xFF616161)
+                                                        )
+                                                    }
+                                                }
+                                                if (ingredient.sugar > 0) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Text(
+                                                            String.format("%.1f", ingredient.sugar), 
+                                                            fontSize = 12.sp, 
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFF8D6E63)
+                                                        )
+                                                        Text(
+                                                            "sugar", 
+                                                            fontSize = 10.sp, 
+                                                            color = Color(0xFF616161)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -238,7 +391,7 @@ fun MealDetailScreen(
                             }
                         }
                     } else if (dishDetail != null) {
-                        // Card dinh dưỡng
+                        // Card dinh dưỡng tổng cộng
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -249,13 +402,19 @@ fun MealDetailScreen(
                             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                         ) {
                             Column(Modifier.padding(20.dp)) {
-                                Text("Thông tin dinh dưỡng", fontWeight = FontWeight.Bold, color = Color(0xFFAD1457), fontSize = 17.sp)
+                                Text("Thông tin dinh dưỡng tổng cộng", fontWeight = FontWeight.Bold, color = Color(0xFFAD1457), fontSize = 17.sp)
                                 Spacer(Modifier.height(8.dp))
-                                val n = dishDetail!!.nutrition
+                                // Tính tổng dinh dưỡng từ nguyên liệu
+                                val totalCalories = dishDetail!!.ingredients.sumOf { it.calories }
+                                val totalProtein = dishDetail!!.ingredients.sumOf { it.protein.toDouble() }.toFloat()
+                                val totalCarbs = dishDetail!!.ingredients.sumOf { it.carbs.toDouble() }.toFloat()
+                                val totalFat = dishDetail!!.ingredients.sumOf { it.fat.toDouble() }.toFloat()
+                                val totalFiber = dishDetail!!.ingredients.sumOf { it.fiber.toDouble() }.toFloat()
+                                val totalSugar = dishDetail!!.ingredients.sumOf { it.sugar.toDouble() }.toFloat()
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("Calories", color = Color(0xFFAD1457), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                     Spacer(Modifier.weight(1f))
-                                    Text("${n.calories} kcal", color = Color(0xFFAD1457), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text("${totalCalories} kcal", color = Color(0xFFAD1457), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                 }
                                 Box(
                                     Modifier
@@ -267,28 +426,28 @@ fun MealDetailScreen(
                                     Box(
                                         Modifier
                                             .fillMaxHeight()
-                                            .fillMaxWidth((n.calories / 400f).coerceAtMost(1f))
+                                            .fillMaxWidth((totalCalories / 400f).coerceAtMost(1f))
                                             .background(Color(0xFFFF69B4))
                                     )
                                 }
                                 Spacer(Modifier.height(10.dp))
                                 Row(Modifier.fillMaxWidth()) {
                                     Text("Protein", color = Color(0xFF1976D2), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                                    Text("${n.protein}g", color = Color(0xFF1976D2), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.1fg", totalProtein), color = Color(0xFF1976D2), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                                     Text("Carbs", color = Color(0xFFFFA000), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                                    Text("${n.carbs}g", color = Color(0xFFFFA000), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.1fg", totalCarbs), color = Color(0xFFFFA000), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Row(Modifier.fillMaxWidth()) {
                                     Text("Chất béo", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                                    Text("${n.fat}g", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.1fg", totalFat), color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                                     Text("Chất xơ", color = Color(0xFF388E3C), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                                    Text("${n.fiber}g", color = Color(0xFF388E3C), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.1fg", totalFiber), color = Color(0xFF388E3C), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Row(Modifier.fillMaxWidth()) {
                                     Text("Sugar", color = Color(0xFF8D6E63), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                                    Text("${n.sugar}g", color = Color(0xFF8D6E63), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                    Text(String.format("%.1fg", totalSugar), color = Color(0xFF8D6E63), fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -341,14 +500,14 @@ fun MealDetailScreen(
                 }
             }
             // Nếu lỗi AI (dishDetail == null và !loading), hiện thông báo lỗi
-            if (!loading && dishDetail == null) {
+            if (!loading && dishDetail == null && !errorMessage.isNullOrEmpty()) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFBCFE8)),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, Color(0xFFFFCDD2)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5F5)),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     Column(
@@ -357,7 +516,43 @@ fun MealDetailScreen(
                             .padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Không thể lấy chi tiết món ăn.\nVui lòng thử lại sau.", color = Color.Red)
+                        Text(
+                            text = "⚠️ Lỗi tải dữ liệu",
+                            color = Color(0xFFD32F2F),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = errorMessage!!,
+                            color = Color(0xFF616161),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                // Retry fetch
+                                loading = true
+                                errorMessage = null
+                                scope.launch {
+                                    try {
+                                        dishDetail = viewModel.fetchDishDetailByName(mealName)
+                                        if (dishDetail == null) {
+                                            errorMessage = "Vẫn không thể lấy được chi tiết món ăn.\nVui lòng thử lại sau."
+                                        }
+                                    } catch (e: Exception) {
+                                        errorMessage = "Lỗi: ${e.message ?: "Không xác định"}"
+                                    } finally {
+                                        loading = false
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFAD1457)
+                            )
+                        ) {
+                            Text("Thử lại", color = Color.White)
+                        }
                     }
                 }
             }

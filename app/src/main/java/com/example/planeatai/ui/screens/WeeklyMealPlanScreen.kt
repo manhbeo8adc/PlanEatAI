@@ -44,6 +44,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.planeatai.ui.model.MealPlan
 import com.example.planeatai.ui.model.Dish
 import com.example.planeatai.ui.model.Nutrition
+import com.example.planeatai.ui.model.UserPreferences
 import android.util.Log
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.SnackbarHostState
@@ -120,7 +121,7 @@ fun WeeklyMealPlanScreen(
                                     actions = {
                                         IconButton(onClick = { 
                                             Log.d("WeeklyMealPlanScreen", "Nút save được bấm")
-                                            viewModel.saveMealPlan()
+                                            viewModel.saveMealPlan("today")
                                             Toast.makeText(context, "Đã lưu thực đơn thành công", Toast.LENGTH_SHORT).show()
                                         }) {
                                             Icon(painter = painterResource(id = R.drawable.ic_save), contentDescription = "Lưu thực đơn")
@@ -168,7 +169,7 @@ fun WeeklyMealPlanScreen(
                                 onClick = {
                                     Log.d("WeeklyMealPlanScreen", "Nút cộng được bấm, gọi generateMealPlan")
                                     isGenerating = true
-                                    viewModel.generateMealPlan()
+                                    viewModel.generateMealPlan("Ăn uống cân bằng", "Ăn uống đa dạng", "Không có yêu cầu bổ sung")
                                 },
                                 containerColor = Pink400,
                                 shape = CircleShape,
@@ -197,7 +198,7 @@ fun WeeklyMealPlanScreen(
                             } else {
                                 items(mealPlans) { mealPlan ->
                                     DayMealCard(
-                                        date = mealPlan.date,
+                                        date = mealPlan.day,
                                         mealPlan = mealPlan,
                                         navController = navController
                                     )
@@ -224,21 +225,15 @@ fun WeeklyMealPlanScreen(
                 }
                 composable("preferences") {
                     val viewModel: MealPlanViewModel = viewModel()
-                    val prefs = viewModel.userPreferences
-                    if (prefs != null) {
-                        PreferencesScreen(
-                            initialPreferences = prefs,
-                            onSave = { prefs ->
-                                viewModel.savePreferences(prefs)
-                                navController.popBackStack()
-                            },
-                            onBack = { navController.popBackStack() }
-                        )
-                    } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
+                    val prefs by viewModel.userPreferences.collectAsState()
+                    PreferencesScreen(
+                        initialPreferences = prefs,
+                        onSave = { preferences ->
+                            viewModel.savePreferences(preferences)
+                            navController.popBackStack()
+                        },
+                        onBack = { navController.popBackStack() }
+                    )
                 }
             }
         }
@@ -292,30 +287,30 @@ fun DayMealCard(date: String, mealPlan: MealPlan?, navController: NavHostControl
             Spacer(modifier = Modifier.height(16.dp))
             MealSection(
                 title = "Bữa sáng",
-                content = mealPlan?.breakfast ?: "Chưa có thực đơn",
+                content = mealPlan?.breakfast?.name ?: "Chưa có thực đơn",
                 borderColor = Color(0xFFFFD8B5),
                 titleColor = Color(0xFFFFB300),
                 icon = "☀️",
-                onClick = { navController.navigate("mealDetail/Bữa sáng/${mealPlan?.breakfast ?: ""}") },
-                dishName = mealPlan?.breakfast ?: ""
+                onClick = { navController.navigate("mealDetail/Bữa sáng/${mealPlan?.breakfast?.name ?: ""}") },
+                dishName = mealPlan?.breakfast?.name ?: ""
             )
             MealSection(
                 title = "Bữa trưa",
-                content = mealPlan?.lunch ?: "Chưa có thực đơn",
+                content = mealPlan?.lunch?.name ?: "Chưa có thực đơn",
                 borderColor = Color(0xFFC4FFD8),
                 titleColor = Color(0xFF26A69A),
                 icon = "🥗",
-                onClick = { navController.navigate("mealDetail/Bữa trưa/${mealPlan?.lunch ?: ""}") },
-                dishName = mealPlan?.lunch ?: ""
+                onClick = { navController.navigate("mealDetail/Bữa trưa/${mealPlan?.lunch?.name ?: ""}") },
+                dishName = mealPlan?.lunch?.name ?: ""
             )
             MealSection(
                 title = "Bữa tối",
-                content = mealPlan?.dinner ?: "Chưa có thực đơn",
+                content = mealPlan?.dinner?.name ?: "Chưa có thực đơn",
                 borderColor = Color(0xFFD8B5FF),
                 titleColor = Color(0xFF7C4DFF),
                 icon = "🌙",
-                onClick = { navController.navigate("mealDetail/Bữa tối/${mealPlan?.dinner ?: ""}") },
-                dishName = mealPlan?.dinner ?: ""
+                onClick = { navController.navigate("mealDetail/Bữa tối/${mealPlan?.dinner?.name ?: ""}") },
+                dishName = mealPlan?.dinner?.name ?: ""
             )
         }
     }

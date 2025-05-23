@@ -2,336 +2,341 @@ package com.example.planeatai.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
-import kotlinx.coroutines.Dispatchers
+import com.example.planeatai.ui.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
-import java.time.LocalDate
-import com.example.planeatai.BuildConfig
+import kotlinx.serialization.json.*
+import kotlinx.serialization.Serializable
 import android.util.Log
-import com.example.planeatai.ui.model.Nutrition
-import com.example.planeatai.ui.model.MealPlan
-import com.example.planeatai.ui.model.Dish
-import android.app.Application
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.json.Json
-import java.io.File
-import androidx.lifecycle.AndroidViewModel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
-import com.example.planeatai.UiState
-import com.example.planeatai.ui.screens.PreferencesData
+import com.google.ai.client.generativeai.GenerativeModel
+import com.example.planeatai.config.ApiConfig
 
-class MealPlanViewModel(application: Application) : AndroidViewModel(application) {
+@Serializable
+data class SavedMealPlan(
+    val date: String,
+    val meals: List<MealPlan>
+)
+
+class MealPlanViewModel : ViewModel() {
     private val _mealPlans = MutableStateFlow<List<MealPlan>>(emptyList())
     val mealPlans: StateFlow<List<MealPlan>> = _mealPlans.asStateFlow()
 
-    private val _uiState = MutableStateFlow<UiState>(UiState.Initial)
-    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+    private val _userPreferences = MutableStateFlow(UserPreferences())
+    val userPreferences: StateFlow<UserPreferences> = _userPreferences.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
-        apiKey = BuildConfig.apiKey
+        modelName = ApiConfig.MODEL_NAME,
+        apiKey = ApiConfig.GEMINI_API_KEY
     )
 
-    private val mealPlanFileName = "mealplans.json"
-    private val preferencesFileName = "user_preferences.json"
-    
-    private fun getMealPlanFile(): File = getApplication<Application>().filesDir.resolve(mealPlanFileName)
-    private fun getPreferencesFile(): File = getApplication<Application>().filesDir.resolve(preferencesFileName)
-
-    companion object {
-        private val dishDetailCache = mutableMapOf<String, Dish>()
-        private const val MAX_RETRIES = 3
-        private const val TIMEOUT_MS = 30000L
-    }
-
-    var userPreferences: PreferencesData? = null
-        private set
-
-    init {
-        loadUserPreferences()
-    }
-
-    private fun loadUserPreferences() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val file = getPreferencesFile()
-                if (file.exists()) {
-                    val json = file.readText()
-                    userPreferences = Json.decodeFromString<PreferencesData>(json)
-                    Log.d("MealPlanViewModel", "Loaded user preferences: $userPreferences")
-                } else {
-                    Log.d("MealPlanViewModel", "No saved preferences found")
-                }
-            } catch (e: Exception) {
-                Log.e("MealPlanViewModel", "Error loading preferences", e)
-            }
+    private fun parseFloatFromAny(value: Any?): Float {
+        return when (value) {
+            is Number -> value.toFloat()
+            is String -> value.toFloatOrNull() ?: 0f
+            else -> 0f
         }
-    }
-
-    fun savePreferences(preferences: PreferencesData) {
-        Log.d("MealPlanViewModel", "savePreferences CALLED with: $preferences")
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val json = Json.encodeToString(preferences)
-                getPreferencesFile().writeText(json)
-                userPreferences = preferences
-                Log.d("MealPlanViewModel", "Saved preferences to file: $preferences")
-            } catch (e: Exception) {
-                Log.e("MealPlanViewModel", "Error saving preferences", e)
-            }
-        }
-    }
-
-    fun generateMealPlan() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = UiState.Loading
-            var retryCount = 0
-            var success = false
-
-            while (retryCount < MAX_RETRIES && !success) {
-                try {
-                    Log.d("MealPlanViewModel", "generateMealPlan called (attempt ${retryCount + 1})")
-                    val prefs = userPreferences
-                    val prefsText = prefs?.let {
-                        """
-                        Sở thích người dùng:
-                        - Món yêu thích: ${it.favoriteDishes.joinToString()}
-                        - Món không thích: ${it.dislikeDishes.joinToString()}
-                        - Nguyên liệu thích: ${it.favoriteIngredients.joinToString()}
-                        - Nguyên liệu không thích: ${it.dislikeIngredients.joinToString()}
-                        - Phong cách: ${it.cuisines.joinToString()}
-                        - Khẩu phần: ${it.servings} người
-                        - Thời gian tối đa: 
-                          + Sáng: ${it.maxPrepBreakfast}p
-                          + Trưa: ${it.maxPrepLunch}p
-                          + Tối: ${it.maxPrepDinner}p
-                        - Chi phí:
-                          + Sáng: ${it.costBreakfast}k
-                          + Trưa: ${it.costLunch}k
-                          + Tối: ${it.costDinner}k
-                        - Calo:
-                          + Sáng: ${it.caloBreakfast}
-                          + Trưa: ${it.caloLunch}
-                          + Tối: ${it.caloDinner}
-                        """.trimIndent()
-                    } ?: "Không có thông tin sở thích người dùng"
-                    
-                    val prompt = """
-                    $prefsText
-                    
-                    Hãy tạo thực đơn cho 7 ngày, mỗi ngày gồm bữa sáng, trưa, tối, theo sở thích người Việt, trả về JSON dạng: [{"date": "yyyy-MM-dd", "breakfast": "...", "lunch": "...", "dinner": "..."}, ...]
-                    """.trimIndent()
-                    
-                    Log.d("MealPlanViewModel", "Full prompt for Gemini:\n$prompt")
-                    
-                    withTimeout(TIMEOUT_MS) {
-                        val response = generativeModel.generateContent(
-                            content {
-                                text(prompt)
-                            }
-                        )
-                        val raw = response.text ?: throw IllegalStateException("Empty response from Gemini")
-                        Log.d("MealPlanViewModel", "Gemini raw response:\n$raw")
-                        
-                        val json = raw
-                            .replace("```json", "")
-                            .replace("```", "")
-                            .trim()
-                        Log.d("MealPlanViewModel", "Cleaned JSON:\n$json")
-                        
-                        if (!isValidJsonArray(json)) {
-                            throw IllegalStateException("Invalid JSON array response")
-                        }
-                        
-                        _mealPlans.value = parseMealPlans(json)
-                        success = true
-                        _uiState.value = UiState.Success("Generated meal plan successfully")
-                    }
-                } catch (e: Exception) {
-                    retryCount++
-                    Log.e("MealPlanViewModel", "Error generateMealPlan (attempt $retryCount)", e)
-                    if (retryCount >= MAX_RETRIES) {
-                        _uiState.value = UiState.Error("Failed to generate meal plan after $MAX_RETRIES attempts: ${e.message}")
-                        _mealPlans.value = emptyList()
-                    } else {
-                        delay(1000L * retryCount)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun parseMealPlans(json: String): List<MealPlan> {
-        return try {
-            val arr = JSONArray(json)
-            List(arr.length()) { i ->
-                val obj = arr.getJSONObject(i)
-                MealPlan(
-                    date = obj.getString("date"),
-                    breakfast = obj.optString("breakfast", ""),
-                    lunch = obj.optString("lunch", ""),
-                    dinner = obj.optString("dinner", "")
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    fun saveMealPlan() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val json = Json.encodeToString(_mealPlans.value)
-                getMealPlanFile().writeText(json)
-                Log.d("MealPlanViewModel", "Saved meal plan to file")
-            } catch (e: Exception) {
-                Log.e("MealPlanViewModel", "Error saving meal plan", e)
-            }
-        }
-    }
-
-    fun loadMealPlan() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val file = getMealPlanFile()
-                if (file.exists()) {
-                    val json = file.readText()
-                    val list = Json.decodeFromString<List<MealPlan>>(json)
-                    _mealPlans.value = list
-                    Log.d("MealPlanViewModel", "Loaded meal plan from file")
-                }
-            } catch (e: Exception) {
-                Log.e("MealPlanViewModel", "Error loading meal plan", e)
-            }
-        }
-    }
-
-    suspend fun generateDishNutrition(dishName: String): Nutrition? {
-        Log.d("GeminiAPI", "generateDishNutrition called for $dishName")
-        return try {
-            val prompt = "Hãy phân tích thành phần dinh dưỡng cho món '$dishName' và trả về JSON: {\"calories\": số, \"protein\": số, \"carbs\": số, \"fat\": số, \"fiber\": số, \"sugar\": số} (đơn vị: kcal, g)"
-            Log.d("GeminiAPI", "Gemini nutrition prompt: $prompt")
-            val response = generativeModel.generateContent(
-                content {
-                    text(prompt)
-                }
-            )
-            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: return null
-            Log.d("GeminiAPI", "Gemini nutrition raw response for $dishName: $raw")
-            val obj = JSONObject(raw)
-            val nutrition = Nutrition(
-                calories = obj.optInt("calories", 0),
-                protein = obj.optInt("protein", 0),
-                carbs = obj.optInt("carbs", 0),
-                fat = obj.optInt("fat", 0),
-                fiber = obj.optInt("fiber", 0),
-                sugar = obj.optInt("sugar", 0)
-            )
-            Log.d("GeminiAPI", "Gemini nutrition parsed for $dishName: $nutrition")
-            nutrition
-        } catch (e: Exception) {
-            Log.e("GeminiAPI", "Error generating nutrition for $dishName", e)
-            null
-        }
-    }
-
-    private fun extractFirstJsonObject(raw: String): String {
-        val start = raw.indexOf('{')
-        val end = raw.lastIndexOf('}')
-        if (start < 0 || end < 0 || end <= start) return raw
-        return raw.substring(start, end + 1)
     }
 
     private fun parseIntFromAny(value: Any?): Int {
         return when (value) {
-            is Int -> value
             is Number -> value.toInt()
-            is String -> Regex("\\d+").find(value)?.value?.toIntOrNull() ?: 0
+            is String -> value.toIntOrNull() ?: 0
             else -> 0
         }
     }
 
-    suspend fun fetchDishDetailByName(dishName: String): Dish? {
-        dishDetailCache[dishName]?.let {
-            Log.d("GeminiAPI", "Lấy chi tiết món từ cache: $dishName")
-            return it
+    private fun extractJsonFromResponse(rawResponse: String): String {
+        // Loại bỏ markdown wrapper
+        val cleaned = rawResponse
+            .replace("```json", "")
+            .replace("```JSON", "")
+            .replace("```", "")
+            .trim()
+        
+        // Tìm vị trí bắt đầu của JSON object
+        val start = cleaned.indexOf('{')
+        if (start == -1) return cleaned
+        
+        // Đếm braces để tìm vị trí kết thúc JSON object
+        var braceCount = 0
+        var end = start
+        
+        for (i in start until cleaned.length) {
+            when (cleaned[i]) {
+                '{' -> braceCount++
+                '}' -> {
+                    braceCount--
+                    if (braceCount == 0) {
+                        end = i
+                        break
+                    }
+                }
+            }
         }
-        Log.d("GeminiAPI", "Gọi AI để lấy chi tiết món: $dishName")
+        
+        // Extract chỉ JSON object, bỏ qua text thêm
+        return if (end > start && braceCount == 0) {
+            cleaned.substring(start, end + 1)
+        } else {
+            cleaned
+        }
+    }
+
+    fun savePreferences(preferences: UserPreferences) {
+        _userPreferences.value = preferences
+    }
+
+    fun generateMealPlan(goals: String, preferences: String, additionalRequests: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            
+            try {
+                val prompt = """
+                Tạo kế hoạch ăn uống 7 ngày cho mục tiêu: $goals
+                Sở thích ăn uống: $preferences
+                Yêu cầu bổ sung: $additionalRequests
+                
+                CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT GIẢI THÍCH THÊM!
+                
+                Format JSON chính xác:
+                {
+                  "meals": [
+                    {
+                      "day": "Thứ Hai",
+                      "breakfast": {
+                        "name": "Tên món ăn",
+                        "description": "Mô tả ngắn",
+                        "calories": 400,
+                        "protein": 20.5,
+                        "carbs": 45.0,
+                        "fat": 15.0,
+                        "fiber": 8.0,
+                        "sugar": 12.0
+                      },
+                      "lunch": { ... },
+                      "dinner": { ... }
+                    },
+                    ...
+                  ]
+                }
+                
+                Lưu ý: Món ăn Việt Nam, thông tin dinh dưỡng chính xác. CHỈ JSON, KHÔNG TEXT THÊM!
+                """.trimIndent()
+
+                val response = generativeModel.generateContent(prompt)
+                val jsonText = response.text ?: ""
+                
+                Log.d("MealPlanViewModel", "Raw response: $jsonText")
+                
+                // Extract chỉ JSON object, bỏ qua text thêm
+                val cleanedJson = extractJsonFromResponse(jsonText)
+                
+                val json = Json { ignoreUnknownKeys = true }
+                val jsonObject = json.parseToJsonElement(cleanedJson).jsonObject
+                val mealsArray = jsonObject["meals"]?.jsonArray
+                
+                val mealPlanList = mutableListOf<MealPlan>()
+                
+                mealsArray?.forEach { mealElement ->
+                    val mealObject = mealElement.jsonObject
+                    val day = mealObject["day"]?.jsonPrimitive?.content ?: ""
+                    
+                    val breakfast = parseMeal(mealObject["breakfast"]?.jsonObject)
+                    val lunch = parseMeal(mealObject["lunch"]?.jsonObject)
+                    val dinner = parseMeal(mealObject["dinner"]?.jsonObject)
+                    
+                    mealPlanList.add(MealPlan(day, breakfast, lunch, dinner))
+                }
+                
+                _mealPlans.value = mealPlanList
+                
+            } catch (e: Exception) {
+                Log.e("MealPlanViewModel", "Error generating meal plan", e)
+                val errorMsg = when {
+                    e.message?.contains("API key not valid") == true ->
+                        "⚠️ API Key không hợp lệ!\n\nVui lòng:\n1. Lấy API key mới từ: https://aistudio.google.com/\n2. Cập nhật vào file ApiConfig.kt\n3. Rebuild ứng dụng"
+                    e.message?.contains("quota") == true ->
+                        "⚠️ Đã hết quota API!\n\nVui lòng đợi reset quota hoặc upgrade plan."
+                    e.message?.contains("permission") == true ->
+                        "⚠️ Không có quyền truy cập!\n\nKiểm tra API key và permissions."
+                    else ->
+                        "Không thể tạo kế hoạch ăn uống: ${e.message}"
+                }
+                _errorMessage.value = errorMsg
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private fun parseMeal(mealJson: JsonObject?): Meal {
+        if (mealJson == null) {
+            return Meal("", "", Nutrition(0, 0f, 0f, 0f, 0f, 0f))
+        }
+        
+        val name = mealJson["name"]?.jsonPrimitive?.content ?: ""
+        val description = mealJson["description"]?.jsonPrimitive?.content ?: ""
+        
+        val calories = mealJson["calories"]?.jsonPrimitive?.intOrNull ?: 0
+        val protein = mealJson["protein"]?.jsonPrimitive?.floatOrNull ?: 0f
+        val carbs = mealJson["carbs"]?.jsonPrimitive?.floatOrNull ?: 0f
+        val fat = mealJson["fat"]?.jsonPrimitive?.floatOrNull ?: 0f
+        val fiber = mealJson["fiber"]?.jsonPrimitive?.floatOrNull ?: 0f
+        val sugar = mealJson["sugar"]?.jsonPrimitive?.floatOrNull ?: 0f
+        
+        val nutrition = Nutrition(calories, protein, carbs, fat, fiber, sugar)
+        
+        return Meal(name, description, nutrition)
+    }
+
+    suspend fun fetchDishDetailByName(dishName: String): Dish? {
         return try {
-            val prompt = "Hãy mô tả chi tiết món '$dishName' theo JSON: {\"name\": tên, \"description\": mô tả ngắn, \"ingredients\": [{\"name\": tên, \"amount\": số lượng}], \"steps\": [danh sách bước], \"nutrition\": {\"calories\": số, \"protein\": số, \"carbs\": số, \"fat\": số, \"fiber\": số, \"sugar\": số}}. Không trả về gì ngoài JSON."
-            Log.d("GeminiAPI", "Gemini detail prompt: $prompt")
-            val response = generativeModel.generateContent(
-                content {
-                    text(prompt)
+            _isLoading.value = true
+            _errorMessage.value = null
+            
+            val prompt = """
+            CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT GIẢI THÍCH THÊM!
+            
+            Thông tin chi tiết món ăn "$dishName":
+            {
+              "id": "unique_id",
+              "name": "$dishName",
+              "imageUrl": null,
+              "description": "Mô tả chi tiết về món ăn",
+              "prepTime": 15,
+              "cookTime": 30,
+              "nutrition": {
+                "calories": 450,
+                "protein": 25.5,
+                "carbs": 35.0,
+                "fat": 18.0,
+                "fiber": 6.0,
+                "sugar": 8.0
+              },
+              "ingredients": [
+                {
+                  "name": "Tên nguyên liệu",
+                  "amount": "Số lượng",
+                  "calories": 100,
+                  "protein": 5.0,
+                  "carbs": 15.0,
+                  "fat": 2.0,
+                  "fiber": 3.0,
+                  "sugar": 1.0
                 }
-            )
-            val raw = response.text?.replace("```json", "")?.replace("```", "")?.trim() ?: return null
-            Log.d("GeminiAPI", "Gemini detail raw response for $dishName: $raw")
-            val jsonBlock = extractFirstJsonObject(raw)
-            val obj = try { JSONObject(jsonBlock) } catch (e: Exception) {
-                Log.e("GeminiAPI", "JSON parse error: $jsonBlock", e)
-                return null
+              ],
+              "steps": [
+                "Bước 1: ...",
+                "Bước 2: ..."
+              ]
             }
-            val nutritionObj = obj.getJSONObject("nutrition")
-            val nutrition = Nutrition(
-                calories = parseIntFromAny(nutritionObj.opt("calories")),
-                protein = parseIntFromAny(nutritionObj.opt("protein")),
-                carbs = parseIntFromAny(nutritionObj.opt("carbs")),
-                fat = parseIntFromAny(nutritionObj.opt("fat")),
-                fiber = parseIntFromAny(nutritionObj.opt("fiber")),
-                sugar = parseIntFromAny(nutritionObj.opt("sugar"))
-            )
-            val ingredientsArr = obj.getJSONArray("ingredients")
-            val ingredients = mutableListOf<Pair<String, String>>()
-            for (i in 0 until ingredientsArr.length()) {
-                try {
-                    val ing = ingredientsArr.getJSONObject(i)
-                    ingredients.add(ing.optString("name", "") to ing.optString("amount", ""))
-                } catch (_: Exception) {
-                    // skip lỗi ingredient
-                }
+            
+            Lưu ý: Món Việt Nam, thông tin chính xác. CHỈ JSON, KHÔNG TEXT THÊM!
+            """.trimIndent()
+
+            val response = generativeModel.generateContent(prompt)
+            val jsonText = response.text ?: ""
+            
+            Log.d("DishDetail", "Raw response: $jsonText")
+            
+            // Extract chỉ JSON object, bỏ qua text thêm
+            val cleanedJson = extractJsonFromResponse(jsonText)
+            
+            val json = Json { ignoreUnknownKeys = true }
+            val dishObject = json.parseToJsonElement(cleanedJson).jsonObject
+            
+            val id = dishObject["id"]?.jsonPrimitive?.content ?: "dish_${System.currentTimeMillis()}"
+            val name = dishObject["name"]?.jsonPrimitive?.content ?: dishName
+            val imageUrl = dishObject["imageUrl"]?.jsonPrimitive?.contentOrNull
+            val description = dishObject["description"]?.jsonPrimitive?.content ?: ""
+            val prepTime = parseIntFromAny(dishObject["prepTime"]?.jsonPrimitive?.intOrNull)
+            val cookTime = parseIntFromAny(dishObject["cookTime"]?.jsonPrimitive?.intOrNull)
+            
+            // Parse nutrition
+            val nutritionObject = dishObject["nutrition"]?.jsonObject
+            val nutrition = if (nutritionObject != null) {
+                Nutrition(
+                    calories = parseIntFromAny(nutritionObject["calories"]?.jsonPrimitive?.intOrNull),
+                    protein = parseFloatFromAny(nutritionObject["protein"]?.jsonPrimitive?.floatOrNull),
+                    carbs = parseFloatFromAny(nutritionObject["carbs"]?.jsonPrimitive?.floatOrNull),
+                    fat = parseFloatFromAny(nutritionObject["fat"]?.jsonPrimitive?.floatOrNull),
+                    fiber = parseFloatFromAny(nutritionObject["fiber"]?.jsonPrimitive?.floatOrNull),
+                    sugar = parseFloatFromAny(nutritionObject["sugar"]?.jsonPrimitive?.floatOrNull)
+                )
+            } else {
+                Nutrition(0, 0f, 0f, 0f, 0f, 0f)
             }
-            val stepsArr = obj.getJSONArray("steps")
-            val steps = List(stepsArr.length()) { i -> stepsArr.getString(i) }
-            val dish = com.example.planeatai.ui.model.Dish(
-                id = dishName,
-                name = obj.optString("name", dishName),
-                imageUrl = null,
-                description = obj.optString("description", ""),
-                prepTime = 0,
-                cookTime = 0,
+            
+            // Parse ingredients
+            val ingredientsArray = dishObject["ingredients"]?.jsonArray
+            val ingredients = ingredientsArray?.map { ingredientElement ->
+                val ingredientObject = ingredientElement.jsonObject
+                Ingredient(
+                    name = ingredientObject["name"]?.jsonPrimitive?.content ?: "",
+                    amount = ingredientObject["amount"]?.jsonPrimitive?.content ?: "",
+                    calories = parseIntFromAny(ingredientObject["calories"]?.jsonPrimitive?.intOrNull),
+                    protein = parseFloatFromAny(ingredientObject["protein"]?.jsonPrimitive?.floatOrNull),
+                    carbs = parseFloatFromAny(ingredientObject["carbs"]?.jsonPrimitive?.floatOrNull),
+                    fat = parseFloatFromAny(ingredientObject["fat"]?.jsonPrimitive?.floatOrNull),
+                    fiber = parseFloatFromAny(ingredientObject["fiber"]?.jsonPrimitive?.floatOrNull),
+                    sugar = parseFloatFromAny(ingredientObject["sugar"]?.jsonPrimitive?.floatOrNull)
+                )
+            } ?: emptyList()
+            
+            // Parse steps
+            val stepsArray = dishObject["steps"]?.jsonArray
+            val steps = stepsArray?.map { it.jsonPrimitive.content } ?: emptyList()
+            
+            Dish(
+                id = id,
+                name = name,
+                imageUrl = imageUrl,
+                description = description,
+                prepTime = prepTime,
+                cookTime = cookTime,
                 nutrition = nutrition,
                 ingredients = ingredients,
                 steps = steps
             )
-            Log.d("GeminiAPI", "Gemini detail parsed for $dishName: $dish")
-            dishDetailCache[dishName] = dish
-            dish
+            
         } catch (e: Exception) {
-            Log.e("GeminiAPI", "Error fetching detail for $dishName", e)
+            Log.e("DishDetail", "Error fetching dish detail", e)
+            val errorMsg = when {
+                e.message?.contains("API key not valid") == true ->
+                    "⚠️ API Key không hợp lệ! Vui lòng cập nhật API key trong ApiConfig.kt"
+                e.message?.contains("quota") == true ->
+                    "⚠️ Đã hết quota API! Vui lòng đợi reset quota."
+                else ->
+                    "Không thể tải thông tin món ăn: ${e.message}"
+            }
+            _errorMessage.value = errorMsg
             null
+        } finally {
+            _isLoading.value = false
         }
+    }
+
+    fun saveMealPlan(date: String) {
+        // Implementation for saving meal plan
+        Log.d("MealPlanViewModel", "Saving meal plan for $date")
+    }
+
+    fun loadMealPlan() {
+        // Implementation for loading saved meal plans
+        Log.d("MealPlanViewModel", "Loading saved meal plans")
     }
 
     fun openSavedMenu() {
-        // TODO: Hiện dialog chọn thực đơn đã lưu hoặc gọi loadMealPlan()
-        loadMealPlan()
+        // Implementation for opening saved menu
+        Log.d("MealPlanViewModel", "Opening saved menu")
     }
-
-    private fun isValidJsonArray(json: String): Boolean {
-        return try {
-            JSONArray(json)
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-} 
+}

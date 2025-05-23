@@ -1,10 +1,13 @@
 package com.example.planeatai.ui.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class Nutrition(
     val calories: Int,
-    val protein: Int,
-    val carbs: Int,
-    val fat: Int,
-    val fiber: Int,
-    val sugar: Int
-) 
+    val protein: Float,
+    val carbs: Float,
+    val fat: Float,
+    val fiber: Float,
+    val sugar: Float
+)

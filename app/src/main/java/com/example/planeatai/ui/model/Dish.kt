@@ -1,7 +1,8 @@
 package com.example.planeatai.ui.model
 
-import com.example.planeatai.ui.model.Nutrition
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class Dish(
     val id: String,
     val name: String,
@@ -10,6 +11,6 @@ data class Dish(
     val prepTime: Int,
     val cookTime: Int,
     val nutrition: Nutrition,
-    val ingredients: List<Pair<String, String>>,
+    val ingredients: List<Ingredient>,
     val steps: List<String>
-) 
+)
