@@ -94,16 +94,46 @@ class MealPlanViewModel : ViewModel() {
         _userPreferences.value = preferences
     }
 
-    fun generateMealPlan(goals: String, preferences: String, additionalRequests: String) {
+    fun generateMealPlan() {
+        val prefs = _userPreferences.value
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             
             try {
+                val cuisineStylesText = if (prefs.cuisineStyles.isNotEmpty()) {
+                    prefs.cuisineStyles.joinToString(", ")
+                } else "Việt Nam"
+                
                 val prompt = """
-                Tạo kế hoạch ăn uống 7 ngày cho mục tiêu: $goals
-                Sở thích ăn uống: $preferences
-                Yêu cầu bổ sung: $additionalRequests
+                Tạo kế hoạch ăn uống 7 ngày với các yêu cầu cụ thể:
+                
+                📋 THÔNG TIN CƠ BẢN:
+                - Số người ăn: ${prefs.servings} người
+                - Phong cách ẩm thực: $cuisineStylesText (xáo trộn giữa các phong cách trong tuần)
+                
+                🍽️ SỞ THÍCH:
+                - Món ăn yêu thích: ${prefs.favoriteFood.ifEmpty { "Không có" }}
+                - Món ăn không thích: ${prefs.dislikedFood.ifEmpty { "Không có" }}
+                
+                ⏰ YÊU CẦU CHO TỪNG BỮA:
+                
+                🌅 BỮA SÁNG:
+                - Thời gian chuẩn bị: ${prefs.breakfastPrefs.prepTime} phút
+                - Calo mong muốn: ${prefs.breakfastPrefs.calories} kcal
+                - Ngân sách: ${prefs.breakfastPrefs.budget / 1000}k VND
+                
+                🌞 BỮA TRƯA:
+                - Thời gian chuẩn bị: ${prefs.lunchPrefs.prepTime} phút
+                - Calo mong muốn: ${prefs.lunchPrefs.calories} kcal
+                - Ngân sách: ${prefs.lunchPrefs.budget / 1000}k VND
+                
+                🌙 BỮA TỐI:
+                - Thời gian chuẩn bị: ${prefs.dinnerPrefs.prepTime} phút
+                - Calo mong muốn: ${prefs.dinnerPrefs.calories} kcal
+                - Ngân sách: ${prefs.dinnerPrefs.budget / 1000}k VND
+                
+                📝 YÊU CẦU BỔ SUNG: ${prefs.additionalRequests.ifEmpty { "Không có" }}
                 
                 CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT GIẢI THÍCH THÊM!
                 
@@ -125,7 +155,42 @@ class MealPlanViewModel : ViewModel() {
                       "lunch": { ... },
                       "dinner": { ... }
                     },
-                    ...
+                    {
+                      "day": "Thứ Ba",
+                      "breakfast": { ... },
+                      "lunch": { ... },
+                      "dinner": { ... }
+                    },
+                    {
+                      "day": "Thứ Tư",
+                      "breakfast": { ... },
+                      "lunch": { ... },
+                      "dinner": { ... }
+                    },
+                    {
+                      "day": "Thứ Năm",
+                      "breakfast": { ... },
+                      "lunch": { ... },
+                      "dinner": { ... }
+                    },
+                    {
+                      "day": "Thứ Sáu",
+                      "breakfast": { ... },
+                      "lunch": { ... },
+                      "dinner": { ... }
+                    },
+                    {
+                      "day": "Thứ Bảy",
+                      "breakfast": { ... },
+                      "lunch": { ... },
+                      "dinner": { ... }
+                    },
+                    {
+                      "day": "Chủ Nhật",
+                      "breakfast": { ... },
+                      "lunch": { ... },
+                      "dinner": { ... }
+                    }
                   ]
                 }
                 

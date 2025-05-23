@@ -169,7 +169,7 @@ fun WeeklyMealPlanScreen(
                                 onClick = {
                                     Log.d("WeeklyMealPlanScreen", "Nút cộng được bấm, gọi generateMealPlan")
                                     isGenerating = true
-                                    viewModel.generateMealPlan("Ăn uống cân bằng", "Ăn uống đa dạng", "Không có yêu cầu bổ sung")
+                                    viewModel.generateMealPlan()
                                 },
                                 containerColor = Pink400,
                                 shape = CircleShape,
@@ -188,15 +188,32 @@ fun WeeklyMealPlanScreen(
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             if (mealPlans.isEmpty()) {
-                                items(7) { idx ->
+                                val daysOfWeek = listOf(
+                                    "Thứ Hai", "Thứ Ba", "Thứ Tư", 
+                                    "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"
+                                )
+                                items(daysOfWeek) { dayName ->
                                     DayMealCard(
-                                        date = LocalDate.now().plusDays(idx.toLong()).toString(),
+                                        date = dayName,
                                         mealPlan = null,
                                         navController = navController
                                     )
                                 }
                             } else {
-                                items(mealPlans) { mealPlan ->
+                                // Sắp xếp thực đơn theo thứ tự đúng
+                                val sortedMealPlans = mealPlans.sortedBy { mealPlan ->
+                                    when (mealPlan.day) {
+                                        "Thứ Hai" -> 1
+                                        "Thứ Ba" -> 2
+                                        "Thứ Tư" -> 3
+                                        "Thứ Năm" -> 4
+                                        "Thứ Sáu" -> 5
+                                        "Thứ Bảy" -> 6
+                                        "Chủ Nhật" -> 7
+                                        else -> 8
+                                    }
+                                }
+                                items(sortedMealPlans) { mealPlan ->
                                     DayMealCard(
                                         date = mealPlan.day,
                                         mealPlan = mealPlan,
@@ -243,7 +260,29 @@ fun WeeklyMealPlanScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DayMealCard(date: String, mealPlan: MealPlan?, navController: NavHostController) {
-    val parsedDate = try { LocalDate.parse(date) } catch (_: Exception) { LocalDate.now() }
+    // Nếu date là tên thứ, sử dụng trực tiếp. Nếu là LocalDate, parse và lấy tên thứ
+    val dayName = if (date.startsWith("Thứ") || date == "Chủ Nhật") {
+        date
+    } else {
+        try { 
+            LocalDate.parse(date).dayOfWeek.getDisplayName(TextStyle.FULL, Locale("vi"))
+        } catch (_: Exception) { 
+            "Thứ Hai" 
+        }
+    }
+    
+    // Tạo short name cho circle
+    val shortName = when (dayName) {
+        "Thứ Hai" -> "T2"
+        "Thứ Ba" -> "T3"
+        "Thứ Tư" -> "T4"
+        "Thứ Năm" -> "T5"
+        "Thứ Sáu" -> "T6"
+        "Thứ Bảy" -> "T7"
+        "Chủ Nhật" -> "CN"
+        else -> "T2"
+    }
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -268,7 +307,7 @@ fun DayMealCard(date: String, mealPlan: MealPlan?, navController: NavHostControl
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = parsedDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale("vi")).uppercase(),
+                            text = shortName,
                             style = MaterialTheme.typography.titleLarge,
                             color = Pink400,
                             fontWeight = FontWeight.Bold
@@ -278,9 +317,10 @@ fun DayMealCard(date: String, mealPlan: MealPlan?, navController: NavHostControl
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(
-                        text = parsedDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = dayName,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }

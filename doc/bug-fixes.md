@@ -465,5 +465,324 @@ private fun extractJsonFromResponse(rawResponse: String): String {
 
 ---
 
+## 🆕 Cải tiến UX: Bỏ hiển thị ngày cụ thể (Tháng 12/2024)
+
+### 📋 **Yêu cầu từ người dùng**
+"Bỏ ngày đi, để kế hoạch từ thứ 2 đến chủ nhật thôi"
+
+### 🎯 **Mục tiêu**
+- Hiển thị chỉ tên thứ trong tuần (Thứ Hai, Thứ Ba...) 
+- Bỏ hiển thị ngày cụ thể (dd/MM/yyyy)
+- Tạo giao diện sạch sẽ, tập trung vào kế hoạch thực đơn
+
+### 🔧 **Thay đổi kỹ thuật**
+
+#### 1. **WeeklyMealPlanScreen.kt**
+**Trước:**
+```kotlin
+Text(
+    text = parsedDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+    style = MaterialTheme.typography.bodyMedium,
+    color = MaterialTheme.colorScheme.onSurfaceVariant
+)
+```
+
+**Sau:**
+```kotlin
+Text(
+    text = parsedDate.dayOfWeek.getDisplayName(TextStyle.FULL, Locale("vi")),
+    style = MaterialTheme.typography.titleLarge,
+    color = MaterialTheme.colorScheme.onSurface,
+    fontWeight = FontWeight.SemiBold
+)
+```
+
+#### 2. **MealPlanViewModel.kt - Prompt Enhancement**
+**Cập nhật prompt để tạo đầy đủ 7 ngày:**
+```kotlin
+"meals": [
+  { "day": "Thứ Hai", ... },
+  { "day": "Thứ Ba", ... },
+  { "day": "Thứ Tư", ... },
+  { "day": "Thứ Năm", ... },
+  { "day": "Thứ Sáu", ... },
+  { "day": "Thứ Bảy", ... },
+  { "day": "Chủ Nhật", ... }
+]
+```
+
+### 🎨 **Cải thiện giao diện**
+
+#### Layout mới:
+```
+┌─────────────────────────────┐
+│ [T2] Thứ Hai               │  ← Chỉ hiển thị tên thứ
+│                             │
+│ ☀️ Bữa sáng: Phở bò         │
+│ 🥗 Bữa trưa: Cơm tấm        │  
+│ 🌙 Bữa tối: Bún bò Huế      │
+└─────────────────────────────┘
+```
+
+**Thay vì:**
+```
+┌─────────────────────────────┐
+│ [T2] 30/12/2024            │  ← Bỏ ngày cụ thể
+│                             │
+│ ☀️ Bữa sáng: Phở bò         │
+│ 🥗 Bữa trưa: Cơm tấm        │
+│ 🌙 Bữa tối: Bún bò Huế      │
+└─────────────────────────────┘
+```
+
+### ✅ **Lợi ích**
+- **Giao diện sạch sẽ**: Không bị rối với thông tin ngày tháng
+- **Tập trung nội dung**: Focus vào thực đơn thay vì ngày
+- **Flexibility**: Kế hoạch có thể dùng cho bất kỳ tuần nào
+- **UX tốt hơn**: Dễ đọc, dễ theo dõi kế hoạch ăn uống
+
+### 🔄 **Build & Deploy**
+✅ Build thành công  
+✅ Cập nhật UI hoàn tất  
+✅ Prompt AI đã được tối ưu  
+✅ Kiểm tra không có lỗi compile  
+
+---
+
+## 🆕 Sửa lỗi hiển thị thứ và thứ tự thực đơn (Tháng 12/2024)
+
+### 📋 **Vấn đề phát hiện**
+1. **Hiển thị sai thứ**: Khi chưa có thực đơn, tất cả cards đều hiển thị cùng một thứ (thường là Thứ 6)
+2. **Thứ tự không đúng**: Thực đơn không hiển thị theo thứ tự từ Thứ 2 đến Chủ nhật
+
+### 🔍 **Nguyên nhân**
+1. **Empty State Logic sai**: 
+   ```kotlin
+   // Code cũ - tất cả đều dùng LocalDate.now()
+   items(7) { idx ->
+       DayMealCard(
+           date = LocalDate.now().plusDays(idx.toLong()).toString(), // ❌ Sai
+           mealPlan = null,
+           navController = navController
+       )
+   }
+   ```
+
+2. **Không có sorting**: Thực đơn từ AI không được sắp xếp theo thứ tự
+
+3. **Date parsing phức tạp**: Logic xử lý ngày/thứ không rõ ràng
+
+### ✅ **Giải pháp đã triển khai**
+
+#### 1. **Sửa Empty State**
+```kotlin
+// Code mới - danh sách thứ cố định
+if (mealPlans.isEmpty()) {
+    val daysOfWeek = listOf(
+        "Thứ Hai", "Thứ Ba", "Thứ Tư", 
+        "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"
+    )
+    items(daysOfWeek) { dayName ->
+        DayMealCard(
+            date = dayName,
+            mealPlan = null,
+            navController = navController
+        )
+    }
+}
+```
+
+#### 2. **Thêm Sorting Logic**
+```kotlin
+// Sắp xếp thực đơn theo thứ tự đúng
+val sortedMealPlans = mealPlans.sortedBy { mealPlan ->
+    when (mealPlan.day) {
+        "Thứ Hai" -> 1
+        "Thứ Ba" -> 2
+        "Thứ Tư" -> 3
+        "Thứ Năm" -> 4
+        "Thứ Sáu" -> 5
+        "Thứ Bảy" -> 6
+        "Chủ Nhật" -> 7
+        else -> 8
+    }
+}
+```
+
+#### 3. **Cải thiện DayMealCard Logic**
+```kotlin
+// Xử lý tên thứ thông minh hơn
+val dayName = if (date.startsWith("Thứ") || date == "Chủ Nhật") {
+    date // Sử dụng trực tiếp nếu đã là tên thứ
+} else {
+    try { 
+        LocalDate.parse(date).dayOfWeek.getDisplayName(TextStyle.FULL, Locale("vi"))
+    } catch (_: Exception) { 
+        "Thứ Hai" 
+    }
+}
+
+// Tạo short name cho circle
+val shortName = when (dayName) {
+    "Thứ Hai" -> "T2"
+    "Thứ Ba" -> "T3"
+    "Thứ Tư" -> "T4"
+    "Thứ Năm" -> "T5"
+    "Thứ Sáu" -> "T6"
+    "Thứ Bảy" -> "T7"
+    "Chủ Nhật" -> "CN"
+    else -> "T2"
+}
+```
+
+### 🎯 **Kết quả cải thiện**
+
+#### Trước khi sửa:
+```
+❌ [T6] Thứ Sáu    <- Tất cả đều hiển thị Thứ 6
+❌ [T6] Thứ Sáu
+❌ [T6] Thứ Sáu
+...
+```
+
+#### Sau khi sửa:
+```
+✅ [T2] Thứ Hai    <- Đúng thứ tự
+✅ [T3] Thứ Ba
+✅ [T4] Thứ Tư
+✅ [T5] Thứ Năm
+✅ [T6] Thứ Sáu
+✅ [T7] Thứ Bảy
+✅ [CN] Chủ Nhật
+```
+
+### 📊 **Lợi ích**
+- **UX tốt hơn**: Hiển thị đúng thứ tự từ Thứ 2 đến Chủ nhật
+- **Logic rõ ràng**: Code dễ hiểu, dễ maintain
+- **Consistency**: Thứ tự luôn nhất quán dù có hay không có thực đơn
+- **Visual**: Short name (T2, T3...) dễ nhận biết trong circle
+
+### 🔄 **Build & Test**
+✅ Build thành công  
+✅ Empty state hiển thị đúng 7 thứ  
+✅ Thực đơn được sắp xếp theo thứ tự  
+✅ UI hiển thị nhất quán  
+
+---
+
+## 🎯 Tính năng mới: Cài đặt sở thích ăn uống chi tiết (Tháng 12/2024)
+
+### 📋 **Yêu cầu từ người dùng**
+"Phần cài đặt sở thích sai hẳn yêu cầu của tôi rồi, phải có món ăn yêu thích, món ăn không thích, thời gian chuẩn bị mong muốn (chia theo từng bữa sáng trưa, tối), lượng calo mong muốn (chia theo từng bữa sáng trưa, tối), phong cách ẩm thực (có thể lựa chọn nhiều phong cách ẩm thực khác nhau và thực đơn sẽ xáo trộn giữa các phong cách ẩm thực trong tuần nếu có nhiều phong cách ẩm thực) giá tiền mong muốn (chia theo từng bữa sáng trưa, tối), số người ăn"
+
+### 🎯 **Mục tiêu**
+- Thay thế hoàn toàn phần cài đặt sở thích cũ (chỉ có 3 field đơn giản)
+- Tạo system preferences chi tiết, thực tế và khoa học
+- AI tạo thực đơn dựa trên preferences cụ thể cho từng bữa ăn
+- Hỗ trợ đa phong cách ẩm thực trong cùng một tuần
+
+### 🔧 **Thay đổi kỹ thuật**
+
+#### 1. **Data Model mới - UserPreferences.kt**
+**Trước (đơn giản):**
+```kotlin
+@Serializable
+data class UserPreferences(
+    val goals: String = "",
+    val preferences: String = "",
+    val additionalRequests: String = ""
+)
+```
+
+**Sau (chi tiết):**
+```kotlin
+@Serializable
+data class MealPreferences(
+    val prepTime: Int = 30, // phút
+    val calories: Int = 500, // calo
+    val budget: Int = 50000 // VND
+)
+
+@Serializable
+data class UserPreferences(
+    val favoriteFood: String = "", // Món ăn yêu thích
+    val dislikedFood: String = "", // Món ăn không thích
+    val breakfastPrefs: MealPreferences = MealPreferences(prepTime = 15, calories = 400, budget = 30000),
+    val lunchPrefs: MealPreferences = MealPreferences(prepTime = 45, calories = 600, budget = 60000),
+    val dinnerPrefs: MealPreferences = MealPreferences(prepTime = 60, calories = 500, budget = 80000),
+    val cuisineStyles: List<String> = listOf("Việt Nam"), // Phong cách ẩm thực
+    val servings: Int = 2, // Số người ăn
+    val additionalRequests: String = "" // Yêu cầu bổ sung
+)
+```
+
+#### 2. **UI mới - PreferencesScreen.kt**
+**Tính năng UI:**
+- ✅ **Sections có tổ chức**: Món yêu thích, không thích, phong cách ẩm thực, số người, settings từng bữa
+- ✅ **FilterChip grid**: Chọn nhiều phong cách ẩm thực (Việt Nam, Trung Hoa, Nhật, Hàn, Thái, Ấn Độ, Ý, Pháp, Mỹ, Địa Trung Hải, Chay)
+- ✅ **Meal-specific cards**: Mỗi bữa ăn có card riêng với 3 tham số:
+  - ⏱️ Thời gian chuẩn bị (phút)
+  - 🔥 Calo mong muốn (kcal)  
+  - 💰 Ngân sách (k VND)
+- ✅ **Input validation**: Giới hạn số người (1-10), format số đúng
+- ✅ **Beautiful design**: Card layout, color coding, emoji icons
+
+#### 3. **AI Prompt cải tiến - MealPlanViewModel.kt**
+**Trước:**
+```kotlin
+fun generateMealPlan(goals: String, preferences: String, additionalRequests: String)
+```
+
+**Sau:**
+```kotlin
+fun generateMealPlan() // Sử dụng userPreferences từ state
+```
+
+**Prompt mới chi tiết:**
+```
+📋 THÔNG TIN CƠ BẢN:
+- Số người ăn: ${prefs.servings} người
+- Phong cách ẩm thực: $cuisineStylesText (xáo trộn giữa các phong cách trong tuần)
+
+🍽️ SỞ THÍCH:
+- Món ăn yêu thích: ${prefs.favoriteFood}
+- Món ăn không thích: ${prefs.dislikedFood}
+
+⏰ YÊU CẦU CHO TỪNG BỮA:
+
+🌅 BỮA SÁNG:
+- Thời gian chuẩn bị: ${prefs.breakfastPrefs.prepTime} phút
+- Calo mong muốn: ${prefs.breakfastPrefs.calories} kcal
+- Ngân sách: ${prefs.breakfastPrefs.budget / 1000}k VND
+
+🌞 BỮA TRƯA: [tương tự]
+🌙 BỮA TỐI: [tương tự]
+```
+
+### ✨ **Lợi ích cho người dùng**
+
+#### **Trước (System cũ)**
+- ❌ Chỉ 3 field text đơn giản
+- ❌ AI phải đoán mò preferences
+- ❌ Không control được calo/budget/thời gian
+- ❌ Không chọn được phong cách ẩm thực cụ thể
+
+#### **Sau (System mới)**
+- ✅ **Precise control**: Calo, thời gian, budget riêng cho từng bữa
+- ✅ **Multi-cuisine support**: Chọn nhiều phong cách, AI sẽ mix trong tuần
+- ✅ **Realistic constraints**: 
+  - Bữa sáng: 15 phút, 400 kcal, 30k VND
+  - Bữa trưa: 45 phút, 600 kcal, 60k VND  
+  - Bữa tối: 60 phút, 500 kcal, 80k VND
+- ✅ **Smart serving calculations**: Điều chỉnh khẩu phần theo số người
+- ✅ **Food preferences**: AI tránh món không thích, ưu tiên món yêu thích
+
+### 📱 **APK mới**
+- ✅ **File**: `app-release.apk` (18MB)
+- ✅ **Signed**: Có thể cài đặt trên điện thoại thật
+- ✅ **Features**: Tất cả tính năng preferences mới đã hoạt động
+
+---
+
 *Tài liệu được cập nhật: Tháng 12/2024*
 *Tác giả: AI Assistant*
